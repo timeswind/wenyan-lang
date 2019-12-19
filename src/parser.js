@@ -213,11 +213,11 @@ function wy2tokens(txt){
 	return tokens;
 }
 
-var iden2pinyin={}
-function tokenRomanize(tokens){
+var idenMap={}
+function tokenRomanize(tokens,method){
 	function noDup(x){
-		for (var k in iden2pinyin){
-			if (iden2pinyin[k]==x){
+		for (var k in idenMap){
+			if (idenMap[k]==x){
 				return false;
 			}
 		}
@@ -226,20 +226,35 @@ function tokenRomanize(tokens){
 	function isRoman(x){
 		return x.replace(/[ -~]/g,'').length==0;
 	}
+	function hanzi2unicodeEntry(s){
+		var y = ""
+		for (var c of s){
+			y += "U"+c.charCodeAt(0).toString(16).toUpperCase();
+		}
+		return y;
+	}
 	for (var i = 0; i < tokens.length; i++){
 		if (tokens[i][0]=="iden" && !isRoman(tokens[i][1])){
-			var r = iden2pinyin[tokens[i][1]]
+			var r = idenMap[tokens[i][1]]
 			var key = tokens[i][1];
 			if (r != undefined){
 				tokens[i][1]=r;
 			}else{
-				r=hanzi2pinyin(tokens[i][1])
+				if (method=="pinyin"){
+					r=hanzi2pinyin(tokens[i][1])
+				}else if (method=="unicode"){
+					r=hanzi2unicodeEntry(tokens[i][1])
+				}else{
+					r=hanzi2pinyin(tokens[i][1]) // legacy
+					//console.log("Unrecognized Romanization method");
+					//return;
+				}
 				while(!noDup(r)){
 					r+="_";
 				}
 				tokens[i][1]=r
 			}
-			iden2pinyin[key]=r;
+			idenMap[key]=r;
 		}
 	}
 }
@@ -291,7 +306,7 @@ function tokens2asc(tokens,assert=(msg,pos,b)=>console.log(`ERROR@${pos}: ${msg}
 			
 			var x = {op:"var",count:1,type:gettok(i+1,1),values:[tokens[i+2]],pos};
 			i+=3;
-			if (gettok(i,0) == "name"){
+			if (tokens[i]!=undefined && gettok(i,0) == "name"){
 				x.names = [gettok(i+1,1)];
 				i+=2;
 			}
@@ -630,12 +645,15 @@ function asc2js(asc){
 				lhs += `[${a.lhssubs[1]}${a.lhssubs[0]=="lit"?"":"-1"}]`
 			}
 			js += `${lhs}=${rhs};`
+		}else if (a.op == "length"){
+			js += `var ${nextTmpVar()}=${a.container}.length;`
+			strayvar ++;
 		}else if (a.op == "discard"){
 			strayvar = 0;
 		}else if (a.op == "comment"){
 			js += `/*${getval(a.value)}*/`
 		}else{
-			//console.log(a.op)
+			console.log(a.op)
 		}
 		// js+="\n"
 	}
@@ -643,9 +661,14 @@ function asc2js(asc){
 }
 
 function compile(lang,txt,{
-		romanizeIdentifiers=true,
+		romanizeIdentifiers="none",
+		resetVarCnt,
 		logCallback=(x)=>((typeof x)=="string")?console.log(x):console.dir(x,{depth:null,'maxArrayLength':null}),
 		errorCallback=process.exit}={}){
+	if (resetVarCnt) {
+		tmpVarCnt = 0;
+		randVarCnt = 0;
+	}
 	txt = txt.replace(/\r\n/g,"\n");
 
 	var tokens = wy2tokens(txt);
@@ -653,8 +676,8 @@ function compile(lang,txt,{
 	logCallback("\n\n=== [PASS 1] TOKENIZER ===");
 	logCallback(tokens)
 
-	if (romanizeIdentifiers){
-		tokenRomanize(tokens);
+	if (romanizeIdentifiers != "none"){
+		tokenRomanize(tokens,romanizeIdentifiers);
 	}
 
 	var txtlines = txt.split("\n")
@@ -700,8 +723,9 @@ function compile(lang,txt,{
 	return targ;
 }
 
+var parser = {KEYWORDS,NUMBER_KEYWORDS,compile,wy2tokens,tokens2asc}
 try{
-    module.exports = {KEYWORDS,NUMBER_KEYWORDS,compile,wy2tokens,tokens2asc};
+    module.exports = parser;
 }catch(e){}
 
 
